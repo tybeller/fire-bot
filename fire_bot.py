@@ -2,6 +2,7 @@ import discord
 import asyncio
 import datetime
 import os
+from embed import create_embed
 from dotenv import load_dotenv, dotenv_values
 from db_ops import *
 from datetime import datetime, timezone, time
@@ -29,16 +30,15 @@ async def setup_hook():
 async def on_ready():
     print(f'We have logged in as {bot.user}')
 @bot.event
-async def on_reaction_add(reaction, user):
-    print("reaction added")
+async def on_reaction_add(reaction, _):
     if reaction.emoji == "🔥":
-        handle_reaction_add(reaction, user)
+        handle_reaction_add(reaction)
 @bot.event
-async def on_reaction_remove(reaction, user):
+async def on_reaction_remove(reaction, _):
     if reaction.emoji == "🔥":
         handle_reaction_remove(reaction, False)
 @bot.event
-async def on_reaction_clear(message, reactions):
+async def on_reaction_clear(_, reactions):
     for reaction in reactions:
         if reaction.emoji == "🔥":
             handle_reaction_remove(reaction, True)
@@ -49,10 +49,29 @@ async def on_reaction_clear_emoji(reaction):
 
 @tasks.loop(hours=168)
 async def weekly_post():
-    #TODO: SEND messages as embeds
-    print("weekly post")
-    channel = bot.get_channel(target_channel_id)
-    await channel.send("Weekly post")
+    embeds = []
+    
+    top_three = fetch_top_three_messages()
+    for rank, row in enumerate(top_three):
+        message_id, channel_id, fire_count = row
+        try:
+            message_channel = bot.get_channel(channel_id)
+            if message_channel is None:
+                print("msg channel not found")
+                return
+            msg = await message_channel.fetch_message(message_id)
+            embeds.append(create_embed(msg, rank+1, fire_count))
+            
+        except discord.NotFound:
+            print("channel not found")
+        except discord.Forbidden:
+            print("channel forbidden")
+        except discord.HTTPException as e:
+            print("exception")
+    print("sending embeds")
+    
+    post_channel = bot.get_channel(target_channel_id)
+    await post_channel.send(embeds=embeds)
 
 @weekly_post.before_loop
 async def before_weekly_post():
